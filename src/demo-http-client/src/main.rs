@@ -1,14 +1,14 @@
 mod wifi;
 
 use esp_idf_sys as _; // If using the `binstart` feature of `esp-idf-sys`, always keep this module imported
-use crate::wifi::my_wifi;
+use crate::wifi::{my_wifi, MyWifi};
 use esp_idf_logger;
 use embedded_svc::{
     http::{
         client::{Client, Request, RequestWrite, Response},
         Headers, Status,
     },
-    io::Read,
+    io::Read, ipv4::ClientSettings,
 };
 use esp_idf_svc::http::client::{EspHttpClient, EspHttpClientConfiguration};
 use esp_idf_svc::netif::*;
@@ -25,8 +25,8 @@ use std::sync::Arc;
 use std::time::*;
 use embedded_svc::ipv4;
 
-const SSID: &str = "Asus WiFi";
-const PASS: &str = "";
+const SSID: &str = env!("MY_ESP32_WIFI_SSID");
+const PASS: &str = env!("MY_ESP32_WIFI_PASS");
 
 fn main() -> Result<()> {
     // Temporary. Will disappear once ESP-IDF 4.4 is released, but for now it is necessary to call this function once,
@@ -35,22 +35,37 @@ fn main() -> Result<()> {
 
     esp_idf_logger::init().unwrap();
 
-    #[allow(unused)]
-    let netif_stack = Arc::new(EspNetifStack::new()?);
-    #[allow(unused)]
-    let sys_loop_stack = Arc::new(EspSysLoopStack::new()?);
-    #[allow(unused)]
-    let default_nvs = Arc::new(EspDefaultNvs::new()?);
+    // #[allow(unused)]
+    // let netif_stack = Arc::new(EspNetifStack::new()?);
+    // #[allow(unused)]
+    // let sys_loop_stack = Arc::new(EspSysLoopStack::new()?);
+    // #[allow(unused)]
+    // let default_nvs = Arc::new(EspDefaultNvs::new()?);
 
-    let mut wifi = my_wifi(
-        netif_stack.clone(),
-        sys_loop_stack.clone(),
-        default_nvs.clone(),
-    )?;
+    let wifi_result: Box<MyWifi> = my_wifi(SSID, PASS)?;
+    let gateway = &wifi_result.ip_settings.subnet.gateway;
+    //let gateway: ipv4::Ipv4Addr = wifi_result.ip_settings.subnet.gateway.clone();
 
+    ping(gateway)?;
     //get("http://neverssl.com");
 
     println!("Fin");
+    Ok(())
+}
+
+fn ping(ipv4: &ipv4::Ipv4Addr) -> Result<()> {
+    let target = ipv4.clone(); // is this unecessary? 
+    let ping_summary = ping::EspPing::default().ping(target, &Default::default())?;
+    
+    if ping_summary.transmitted != ping_summary.received {
+        bail!(
+            "Pinging gateway {} resulted in timeouts",
+            target
+        );
+    }
+
+    info!("Pinging done");
+
     Ok(())
 }
 
